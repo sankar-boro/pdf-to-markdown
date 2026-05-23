@@ -1,1 +1,9 @@
 marker-pdf[full]
+pypdfium2
+fastapi
+uvicorn[standard]
+watchdog
+psutil
+pyyaml
+python-multipart
+tqdm

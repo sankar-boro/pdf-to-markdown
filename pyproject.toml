@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "loony-pdf2md"
+version = "1.0.0"
+description = "Convert PDF files to Markdown using Marker"
+requires-python = ">=3.12"
+dependencies = [
+    "marker-pdf[full]",
+    "pypdfium2",
+    "fastapi",
+    "uvicorn[standard]",
+    "watchdog",
+    "psutil",
+    "pyyaml",
+    "python-multipart",
+    "tqdm",
+]
+
+[project.scripts]
+pdf2md        = "main:main"
+pdf2md-large  = "convert_large:main"
+pdf2md-split  = "split_pdf:__main__"
+pdf2md-server = "server:main"
+pdf2md-watch  = "watch:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
