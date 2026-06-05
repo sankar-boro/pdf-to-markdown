@@ -1,9 +1,11 @@
 """
 watch.py — Watch a folder and auto-convert any new PDF that appears.
 
-Usage:
-    python watch.py --input-dir pdfs/ --output-dir output/
-    python watch.py --input-dir pdfs/ --output-dir output/ --large --chunk-size 5
+Settings are read from config.json:
+  watch_dir    — folder to watch for new PDFs
+  markdown_dir — where to write converted markdown
+  large        — use page-by-page pipeline (true/false)
+  merge, retries, cooldown, extract_images — passed to the large pipeline
 """
 
 import argparse
@@ -13,10 +15,9 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
 from watchdog.observers import Observer
 
-from src.config import load_config, merge_config_with_args
-from src.converter import convert_single, PDFError
-from src.logger import setup_logging, add_logging_args, get_logger, get_logger
-from src.converter import _get_models
+from src.config import load_config
+from src.converter import convert_single, PDFError, _get_models
+from src.logger import setup_logging, add_logging_args, get_logger
 
 logger = get_logger()
 
@@ -62,14 +63,9 @@ class PDFHandler(FileSystemEventHandler):
             return
 
         if self.use_large:
-            # Import here to avoid circular issues with module-level setup
-            from convert_large import convert_large_pdf
+            from src.convert_large import convert_large_pdf
             try:
-                convert_large_pdf(
-                    pdf_path=pdf,
-                    output_dir=self.output_dir,
-                    **self.large_kwargs,
-                )
+                convert_large_pdf(pdf_path=pdf, output_dir=self.output_dir, **self.large_kwargs)
             except Exception as e:
                 logger.error(f"Failed (large): {pdf.name} — {e}")
         else:
@@ -92,64 +88,57 @@ class PDFHandler(FileSystemEventHandler):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Watch a folder and auto-convert new PDFs to markdown.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python watch.py --input-dir pdfs/ --output-dir output/
-  python watch.py --input-dir pdfs/ --output-dir output/ --large --chunk-size 5 --merge
-        """,
+        description="Watch a folder and auto-convert new PDFs to markdown. "
+                    "All settings are read from config.json.",
     )
-    parser.add_argument("--input-dir", required=True, help="Folder to watch for new PDFs")
-    parser.add_argument("--output-dir", default="output", help="Where to write markdown files")
-    parser.add_argument("--large", action="store_true",
-                        help="Use chunk-based conversion (for large PDFs)")
-    parser.add_argument("--chunk-size", type=int, default=10,
-                        help="Pages per chunk when --large is set (default: 10)")
-    parser.add_argument("--merge", action="store_true",
-                        help="Merge per-chunk markdowns into one file (with --large)")
-    parser.add_argument("--retries", type=int, default=2)
-    parser.add_argument("--extract-images", action="store_true")
-    parser.add_argument("--config", default=None, metavar="PATH")
+    parser.add_argument("--config", default=None, metavar="PATH",
+                        help="Path to config.json (default: ./config.json)")
     add_logging_args(parser)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    cfg = merge_config_with_args(cfg, args)
-
     setup_logging(
-        verbose=cfg.get("verbose", False),
-        quiet=cfg.get("quiet", False),
-        log_file=cfg.get("log_file"),
+        verbose=cfg.get("verbose", False) or args.verbose,
+        quiet=cfg.get("quiet", False) or args.quiet,
+        log_file=args.log_file or cfg.get("log_file"),
     )
 
-    input_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
+    watch_dir = cfg.get("watch_dir")
+    markdown_dir = cfg.get("markdown_dir", "output")
+
+    if not watch_dir:
+        logger.error("'watch_dir' is not set in config.json. Run: ./scripts/run.sh init-config")
+        raise SystemExit(1)
+
+    input_dir = Path(watch_dir)
+    output_dir = Path(markdown_dir)
 
     if not input_dir.is_dir():
-        logger.error(f"Input directory does not exist: {input_dir}")
+        logger.error(f"watch_dir does not exist: {input_dir}")
         raise SystemExit(1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-load models so first conversion is fast
+    use_large = cfg.get("large", False)
+
     logger.info("Pre-loading models...")
     _get_models()
     logger.info(f"Watching {input_dir} for new PDFs. Press Ctrl+C to stop.")
 
     large_kwargs = dict(
-        chunk_size=args.chunk_size,
-        page_range=None,
-        keep_chunks=False,
-        retries=args.retries,
-        merge=args.merge,
+        pages_dir=Path(cfg.get("pages_dir") or output_dir / "pages"),
+        page_range=cfg.get("page_range"),
+        keep_pages=cfg.get("keep_pages", False),
+        max_attempts=cfg.get("retries", 3),
+        cooldown=cfg.get("cooldown", 30),
+        merge=cfg.get("merge", False),
         dry_run=False,
-        overwrite=False,
-        extract_images=args.extract_images,
-        report_file=None,
+        overwrite=cfg.get("overwrite", False),
+        extract_images=cfg.get("extract_images", True),
+        cfg=cfg,
     )
 
-    handler = PDFHandler(output_dir, use_large=args.large, large_kwargs=large_kwargs)
+    handler = PDFHandler(output_dir, use_large=use_large, large_kwargs=large_kwargs)
     observer = Observer()
     observer.schedule(handler, str(input_dir), recursive=False)
     observer.start()

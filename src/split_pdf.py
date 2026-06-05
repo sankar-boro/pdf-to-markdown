@@ -3,6 +3,7 @@ import sys
 import pypdfium2 as pdfium
 from pathlib import Path
 
+from src.config import load_config
 from src.logger import get_logger, setup_logging, add_logging_args
 
 logger = get_logger()
@@ -87,17 +88,39 @@ def _fmt_size(nbytes: int) -> str:
     return f"{nbytes / 1024 ** 2:.2f} MB"
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Split a PDF into individual page PDFs")
-    parser.add_argument("--input", required=True, help="Input PDF file")
-    parser.add_argument("--output", default="output/pages", help="Output directory")
-    parser.add_argument("--page-range", default=None, metavar="RANGE",
-                        help="Pages to split, e.g. '1-5,8,10-12'. Default: all pages.")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing page PDFs")
+def main():
+    parser = argparse.ArgumentParser(
+        description="Split a PDF into individual page PDFs. Settings are read from config.json.",
+    )
+    parser.add_argument("--config", default=None, metavar="PATH",
+                        help="Path to config.json (default: ./config.json)")
     add_logging_args(parser)
     args = parser.parse_args()
 
-    setup_logging(verbose=args.verbose, quiet=args.quiet,
-                  log_file=args.log_file)
+    cfg = load_config(args.config)
+    setup_logging(
+        verbose=cfg.get("verbose", False) or args.verbose,
+        quiet=cfg.get("quiet", False) or args.quiet,
+        log_file=args.log_file or cfg.get("log_file"),
+    )
 
-    split_pdf(args.input, args.output, page_range=args.page_range, overwrite=args.overwrite)
+    pdf_path = cfg.get("pdf_path")
+    pages_dir = cfg.get("pages_dir")
+
+    if not pdf_path:
+        logger.error("'pdf_path' is not set in config.json. Run: ./scripts/run.sh init-config")
+        sys.exit(1)
+    if not pages_dir:
+        logger.error("'pages_dir' is not set in config.json.")
+        sys.exit(1)
+
+    split_pdf(
+        pdf_path,
+        pages_dir,
+        page_range=cfg.get("page_range"),
+        overwrite=cfg.get("overwrite", False),
+    )
+
+
+if __name__ == "__main__":
+    main()

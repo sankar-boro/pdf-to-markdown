@@ -14,17 +14,16 @@ dependencies = [
     "uvicorn[standard]",
     "watchdog",
     "psutil",
-    "pyyaml",
     "python-multipart",
     "tqdm",
 ]
 
 [project.scripts]
 pdf2md        = "main:main"
-pdf2md-large  = "convert_large:main"
-pdf2md-split  = "split_pdf:__main__"
-pdf2md-server = "server:main"
-pdf2md-watch  = "watch:main"
+pdf2md-large  = "src.convert_large:main"
+pdf2md-split  = "src.split_pdf:main"
+pdf2md-server = "src.server:main"
+pdf2md-watch  = "src.watch:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

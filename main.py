@@ -40,6 +40,11 @@ Examples:
         action="store_true",
         help="Skip files that already have output",
     )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="Skip image extraction (images are extracted by default)",
+    )
     add_logging_args(parser)
     args = parser.parse_args()
 
@@ -58,6 +63,7 @@ Examples:
                 args.output,
                 output_format=args.output_format,
                 overwrite=not args.no_overwrite,
+                extract_images=not args.no_images,
             )
         else:
             result = convert_single(
@@ -66,6 +72,7 @@ Examples:
                 output_format=args.output_format,
                 page_range=args.page_range,
                 overwrite=not args.no_overwrite,
+                extract_images=not args.no_images,
             )
             logger.info(f"Converted: {result.output_file}  ({result.duration:.1f}s, {_fmt_size(result.output_size)})")
     except PDFError as e:

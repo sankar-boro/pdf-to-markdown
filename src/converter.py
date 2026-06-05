@@ -74,8 +74,9 @@ def convert_single(
     output_format: str = "markdown",
     page_range: Optional[str] = None,
     overwrite: bool = True,
-    extract_images: bool = False,
+    extract_images: bool = True,
     run_postprocess: bool = True,
+    output_stem: Optional[str] = None,
 ) -> ConvertResult:
     pdf_path = Path(pdf_path)
     output_dir = Path(output_dir)
@@ -84,7 +85,8 @@ def convert_single(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ext = "md" if output_format == "markdown" else output_format
-    output_file = output_dir / f"{pdf_path.stem}.{ext}"
+    stem = output_stem if output_stem else pdf_path.stem
+    output_file = output_dir / f"{stem}.{ext}"
 
     if not overwrite and output_file.exists():
         _validate_output(output_file)
@@ -151,7 +153,7 @@ def convert_batch(
     output_dir: str,
     output_format: str = "markdown",
     overwrite: bool = True,
-    extract_images: bool = False,
+    extract_images: bool = True,
 ):
     input_dir = Path(input_dir)
     if not input_dir.is_dir():

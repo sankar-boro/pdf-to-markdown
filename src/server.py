@@ -2,8 +2,8 @@
 server.py — FastAPI HTTP server for PDF-to-markdown conversion.
 
 Usage:
-    python server.py
-    python server.py --host 0.0.0.0 --port 8000
+    scripts/run.sh server
+    scripts/run.sh server --host 0.0.0.0 --port 8000
 
 Endpoints:
     POST /convert          Upload a PDF, get markdown back
@@ -145,7 +145,7 @@ def main():
     logger.info(f"Docs at http://{args.host}:{args.port}/docs")
 
     uvicorn.run(
-        "server:app",
+        "src.server:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
