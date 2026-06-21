@@ -35,6 +35,7 @@ class ConvertResult:
     duration: float
     output_size: int
     images_saved: int = 0
+    blank: bool = False  # True when the page has no extractable text
 
 
 class PDFError(Exception):
@@ -59,12 +60,17 @@ def validate_pdf(pdf_path: Path):
 
 
 def _validate_output(output_file: Path, min_bytes: int = 32):
-    """Raise if the output file is missing or suspiciously small."""
+    """Raise if the output file is missing or suspiciously small.
+
+    0 bytes is accepted — it means the page has no extractable text (blank
+    or image-only page). Only 1 to min_bytes-1 bytes is flagged as suspicious.
+    """
     if not output_file.exists():
         raise PDFError(f"Conversion produced no output file: {output_file}")
-    if output_file.stat().st_size < min_bytes:
+    size = output_file.stat().st_size
+    if 0 < size < min_bytes:
         raise PDFError(
-            f"Output file is suspiciously small ({output_file.stat().st_size} bytes): {output_file}"
+            f"Output file is suspiciously small ({size} bytes): {output_file}"
         )
 
 
@@ -75,6 +81,8 @@ def convert_single(
     page_range: Optional[str] = None,
     overwrite: bool = True,
     extract_images: bool = True,
+    images_dir: Optional[str] = None,
+    image_format: str = "png",
     run_postprocess: bool = True,
     output_stem: Optional[str] = None,
 ) -> ConvertResult:
@@ -127,24 +135,35 @@ def convert_single(
         f.write(text)
 
     _validate_output(output_file)
+    output_size = output_file.stat().st_size
+    is_blank = output_size == 0
+    if is_blank:
+        logger.debug(f"Blank page (no extractable text): {output_file.name}")
 
-    # Save extracted images next to the markdown
+    # Save extracted images
     images_saved = 0
     if extract_images and images:
-        img_dir = output_dir / f"{pdf_path.stem}_images"
+        if images_dir:
+            img_dir = Path(images_dir)
+        else:
+            img_dir = output_dir / f"{stem}_images"
         img_dir.mkdir(parents=True, exist_ok=True)
+        fmt = image_format.lower().lstrip(".")
         for img_name, img in images.items():
             img = convert_if_not_rgb(img)
-            img.save(str(img_dir / img_name))
+            # Replace extension with the configured format
+            out_name = Path(img_name).stem + f".{fmt}"
+            img.save(str(img_dir / out_name), format=fmt.upper().replace("JPG", "JPEG"))
             images_saved += 1
-        logger.debug(f"Saved {images_saved} image(s) to {img_dir}")
+        logger.debug(f"Saved {images_saved} image(s) to {img_dir} ({fmt})")
 
     return ConvertResult(
         output_file=output_file,
         page_count=1,
         duration=duration,
-        output_size=output_file.stat().st_size,
+        output_size=output_size,
         images_saved=images_saved,
+        blank=is_blank,
     )
 
 

@@ -105,18 +105,18 @@ def main():
     )
 
     pdf_path = cfg.get("pdf_path")
-    pages_dir = cfg.get("pages_dir")
-
     if not pdf_path:
         logger.error("'pdf_path' is not set in config.json. Run: ./scripts/run.sh init-config")
         sys.exit(1)
-    if not pages_dir:
-        logger.error("'pages_dir' is not set in config.json.")
-        sys.exit(1)
+
+    # pages land in <output_dir>/<stem>/pages/
+    pdf_path = Path(pdf_path)
+    output_root = Path(cfg.get("output_dir") or "output")
+    pages_dir = output_root / pdf_path.stem / "pages"
 
     split_pdf(
-        pdf_path,
-        pages_dir,
+        str(pdf_path),
+        str(pages_dir),
         page_range=cfg.get("page_range"),
         overwrite=cfg.get("overwrite", False),
     )

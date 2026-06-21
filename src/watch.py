@@ -42,10 +42,10 @@ def _wait_until_stable(path: Path, interval: float = 0.5, retries: int = 6) -> b
 
 
 class PDFHandler(FileSystemEventHandler):
-    def __init__(self, output_dir: Path, use_large: bool, large_kwargs: dict):
-        self.output_dir = output_dir
+    def __init__(self, output_root: Path, use_large: bool, cfg: dict):
+        self.output_root = output_root
         self.use_large = use_large
-        self.large_kwargs = large_kwargs
+        self.cfg = cfg
         self._seen: set[str] = set()
 
     def _handle(self, path: str):
@@ -62,15 +62,40 @@ class PDFHandler(FileSystemEventHandler):
             logger.warning(f"File does not appear stable, skipping: {pdf.name}")
             return
 
+        # Per-PDF output dirs follow the same structure as the large command
+        pdf_out      = self.output_root / pdf.stem
+        pages_dir    = pdf_out / "pages"
+        markdown_dir = pdf_out / "markdown"
+        images_dir   = pdf_out / "markdown" / "images"
+
         if self.use_large:
             from src.convert_large import convert_large_pdf
             try:
-                convert_large_pdf(pdf_path=pdf, output_dir=self.output_dir, **self.large_kwargs)
+                convert_large_pdf(
+                    pdf_path=pdf,
+                    markdown_dir=markdown_dir,
+                    pages_dir=pages_dir,
+                    images_dir=images_dir,
+                    page_range=self.cfg.get("page_range"),
+                    keep_pages=self.cfg.get("keep_pages", False),
+                    max_attempts=self.cfg.get("retries", 3),
+                    cooldown=self.cfg.get("cooldown", 30),
+                    merge=self.cfg.get("merge", False),
+                    dry_run=False,
+                    overwrite=self.cfg.get("overwrite", False),
+                    extract_images=self.cfg.get("extract_images", True),
+                    cfg=self.cfg,
+                )
             except Exception as e:
                 logger.error(f"Failed (large): {pdf.name} — {e}")
         else:
             try:
-                result = convert_single(str(pdf), str(self.output_dir))
+                result = convert_single(
+                    str(pdf), str(markdown_dir),
+                    extract_images=self.cfg.get("extract_images", True),
+                    images_dir=str(images_dir),
+                    image_format=self.cfg.get("image_format", "png"),
+                )
                 logger.info(f"Converted: {result.output_file}")
             except PDFError as e:
                 logger.error(f"Skipped: {e}")
@@ -104,43 +129,29 @@ def main():
     )
 
     watch_dir = cfg.get("watch_dir")
-    markdown_dir = cfg.get("markdown_dir", "output")
-
     if not watch_dir:
         logger.error("'watch_dir' is not set in config.json. Run: ./scripts/run.sh init-config")
         raise SystemExit(1)
 
-    input_dir = Path(watch_dir)
-    output_dir = Path(markdown_dir)
+    input_dir   = Path(watch_dir)
+    output_root = Path(cfg.get("output_dir") or "output")
 
     if not input_dir.is_dir():
         logger.error(f"watch_dir does not exist: {input_dir}")
         raise SystemExit(1)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_root.mkdir(parents=True, exist_ok=True)
 
     use_large = cfg.get("large", False)
 
     logger.info("Pre-loading models...")
     _get_models()
-    logger.info(f"Watching {input_dir} for new PDFs. Press Ctrl+C to stop.")
+    logger.info(f"Watching {input_dir} → {output_root}/<stem>/markdown. Press Ctrl+C to stop.")
 
-    large_kwargs = dict(
-        pages_dir=Path(cfg.get("pages_dir") or output_dir / "pages"),
-        page_range=cfg.get("page_range"),
-        keep_pages=cfg.get("keep_pages", False),
-        max_attempts=cfg.get("retries", 3),
-        cooldown=cfg.get("cooldown", 30),
-        merge=cfg.get("merge", False),
-        dry_run=False,
-        overwrite=cfg.get("overwrite", False),
-        extract_images=cfg.get("extract_images", True),
-        cfg=cfg,
-    )
-
-    handler = PDFHandler(output_dir, use_large=use_large, large_kwargs=large_kwargs)
+    handler = PDFHandler(output_root, use_large=use_large, cfg=cfg)
     observer = Observer()
     observer.schedule(handler, str(input_dir), recursive=False)
+
     observer.start()
 
     try:

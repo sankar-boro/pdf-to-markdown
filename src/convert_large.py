@@ -99,7 +99,7 @@ def _pdf_info(pdf_path: Path) -> dict:
     }
 
 
-def _init_metadata(pdf_path: Path, pages_dir: Path, markdown_dir: Path, cfg: dict) -> dict:
+def _init_metadata(pdf_path: Path, pages_dir: Path, markdown_dir: Path, images_dir: Path, cfg: dict) -> dict:
     return {
         "pdf": _pdf_info(pdf_path),
         "run": {
@@ -109,14 +109,16 @@ def _init_metadata(pdf_path: Path, pages_dir: Path, markdown_dir: Path, cfg: dic
             "config": {k: str(v) if isinstance(v, Path) else v for k, v in cfg.items()},
         },
         "output": {
-            "pages_dir": str(pages_dir),
+            "pages_dir":    str(pages_dir),
             "markdown_dir": str(markdown_dir),
+            "images_dir":   str(images_dir),
         },
         "summary": {
             "total": 0,
             "succeeded": 0,
-            "failed": 0,
+            "blank": 0,
             "skipped": 0,
+            "failed": 0,
         },
         "pages": [],
     }
@@ -133,7 +135,8 @@ def _finalize_metadata(meta: dict, results: list[PageResult], start_time: float,
     meta["run"]["duration_seconds"] = round(time.time() - start_time, 1)
 
     meta["summary"]["total"] = len(results)
-    meta["summary"]["succeeded"] = sum(1 for r in results if r.success and not r.skipped)
+    meta["summary"]["succeeded"] = sum(1 for r in results if r.success and not r.skipped and not r.blank)
+    meta["summary"]["blank"] = sum(1 for r in results if r.blank)
     meta["summary"]["skipped"] = sum(1 for r in results if r.skipped)
     meta["summary"]["failed"] = sum(1 for r in results if not r.success)
 
@@ -142,7 +145,7 @@ def _finalize_metadata(meta: dict, results: list[PageResult], start_time: float,
             "page": r.page_num,
             "source_pdf": r.source,
             "output_md": r.output.name if r.output else None,
-            "status": "skipped" if r.skipped else ("done" if r.success else "failed"),
+            "status": "skipped" if r.skipped else "blank" if r.blank else "done" if r.success else "failed",
             "duration_seconds": round(r.duration, 2) if r.duration else None,
             "size_bytes": r.output_size if r.output_size else None,
             "error": r.error if r.error else None,
@@ -188,6 +191,7 @@ def convert_large_pdf(
     pdf_path: Path,
     markdown_dir: Path,
     pages_dir: Path,
+    images_dir: Path,
     page_range: Optional[str],
     keep_pages: bool,
     max_attempts: int,
@@ -204,7 +208,7 @@ def convert_large_pdf(
     error_log = markdown_dir / f"{pdf_path.stem}_errors.log"
 
     # ── Generate metadata at the start ───────────────────────────────────────
-    meta = _init_metadata(pdf_path, pages_dir, markdown_dir, cfg)
+    meta = _init_metadata(pdf_path, pages_dir, markdown_dir, images_dir, cfg)
     _save_metadata(meta, metadata_path)
     logger.info(f"Metadata: {metadata_path}")
 
@@ -269,17 +273,23 @@ def convert_large_pdf(
                         str(markdown_dir),
                         overwrite=True,
                         extract_images=extract_images,
+                        images_dir=str(images_dir),
+                        image_format=cfg.get("image_format", "png"),
                         run_postprocess=False,
                     )
                     duration = time.time() - page_start
+                    if result.blank:
+                        logger.info(f"  Page {idx}: blank (no extractable text, skipping retries)")
                     report.results.append(PageResult(
                         page_num=idx, source=page_file.name,
                         output=result.output_file, success=True,
-                        duration=duration, output_size=result.output_size,
+                        blank=result.blank, duration=duration,
+                        output_size=result.output_size,
                     ))
                     state[state_key] = "done"
                     _save_state(state_file, state)
-                    converted_md_files.append(result.output_file)
+                    if not result.blank:
+                        converted_md_files.append(result.output_file)
                     last_error = None
                     break
                 except Exception as e:
@@ -367,9 +377,8 @@ Examples:
     parser.add_argument("--input", default=None, nargs="+",
                         help="Input PDF file(s). Overrides pdf_path in config.json")
     parser.add_argument("--output", default=None,
-                        help="Markdown output directory. Overrides markdown_dir in config.json")
-    parser.add_argument("--pages-dir", default=None,
-                        help="Directory for split page PDFs. Overrides pages_dir in config.json")
+                        help="Root output directory. Overrides output_dir in config.json. "
+                             "Structure: <output>/<stem>/pages|markdown|markdown/images")
     parser.add_argument("--page-range", default=None, metavar="RANGE",
                         help="Only process these pages, e.g. '1-10,15'")
     parser.add_argument("--keep-pages", action="store_true",
@@ -415,28 +424,25 @@ Examples:
     else:
         parser.error("No input PDF specified. Use --input or set pdf_path in config.json")
 
-    # Resolve output dirs
-    markdown_dir_base = Path(args.output or cfg.get("markdown_dir") or "output")
+    # Resolve root output dir — CLI --output wins, then config output_dir
+    output_root = Path(args.output or cfg.get("output_dir") or "output")
 
     for pdf_path in input_paths:
         if not pdf_path.exists():
             logger.error(f"File not found: {pdf_path}")
             sys.exit(1)
 
-        markdown_dir = markdown_dir_base
-        pages_dir = (
-            Path(args.pages_dir)
-            if args.pages_dir
-            else Path(cfg["pages_dir"]) / pdf_path.stem
-            if cfg.get("pages_dir")
-            else markdown_dir / "pages" / pdf_path.stem
-        )
+        # All output lives under <output_root>/<stem>/
+        pdf_out = output_root / pdf_path.stem
+        pages_dir    = pdf_out / "pages"
+        markdown_dir = pdf_out / "markdown"
 
         try:
             convert_large_pdf(
                 pdf_path=pdf_path,
                 markdown_dir=markdown_dir,
                 pages_dir=pages_dir,
+                images_dir=markdown_dir / "images",
                 page_range=cfg.get("page_range"),
                 keep_pages=cfg.get("keep_pages", False),
                 max_attempts=cfg.get("retries", 3),

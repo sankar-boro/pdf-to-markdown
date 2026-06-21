@@ -81,26 +81,45 @@ This writes `config.json`:
 
 ```json
 {
-  "pdf_path":     "/path/to/your.pdf",
-  "pages_dir":    "output/pages",
-  "markdown_dir": "output/markdown",
-  "watch_dir":    "/path/to/watch/folder",
-  "large":        false,
+  "_section_paths":   "── Paths ──────────────────────────────────────────",
+  "pdf_path":         "/path/to/your.pdf",
+  "output_dir":       "output",
 
-  "output_format":  "markdown",
-  "page_range":     null,
-  "merge":          false,
-  "keep_pages":     false,
-  "overwrite":      false,
-  "extract_images": true,
+  "_section_watch":   "── Watch ──────────────────────────────────────────",
+  "watch_dir":        "/path/to/incoming/pdfs",
+  "large":            false,
 
-  "retries":  3,
-  "cooldown": 30,
+  "_section_output":  "── Output ─────────────────────────────────────────",
+  "output_format":    "markdown",
+  "page_range":       null,
+  "merge":            false,
+  "keep_pages":       false,
+  "overwrite":        false,
 
-  "log_file": null,
-  "verbose":  false,
-  "quiet":    false
+  "_section_images":  "── Images ─────────────────────────────────────────",
+  "extract_images":   true,
+  "image_format":     "png",
+
+  "_section_reliability": "── Reliability ────────────────────────────────",
+  "retries":          3,
+  "cooldown":         30,
+
+  "_section_logging": "── Logging ────────────────────────────────────────",
+  "log_file":         null,
+  "verbose":          false,
+  "quiet":            false
 }
+```
+
+**Output directory structure** (everything lives under `output_dir`):
+
+```
+output/
+└── Modern_Bodo_grammar/
+    ├── pages/                 ← split page PDFs (removed after conversion unless keep_pages: true)
+    ├── markdown/              ← one .md file per page + metadata + error log
+    │   └── images/            ← extracted images
+    └── Modern_Bodo_grammar.md ← merged file (only when merge: true)
 ```
 
 ### Config reference
@@ -108,8 +127,7 @@ This writes `config.json`:
 | Key | Used by | Description |
 |---|---|---|
 | `pdf_path` | `large`, `split` | Path to the PDF to process. |
-| `pages_dir` | `large`, `split` | Where to write the split page PDFs. |
-| `markdown_dir` | `large`, `watch` | Where to write the output markdown files. |
+| `output_dir` | `large`, `split`, `watch` | Root output folder. All output is organized under `<output_dir>/<stem>/`. |
 | `watch_dir` | `watch` | Folder to monitor for new PDFs. |
 | `large` | `watch` | `true` = use page-by-page pipeline for every detected PDF. |
 | `output_format` | `large`, `convert` | `markdown`, `html`, or `json`. |
@@ -117,7 +135,8 @@ This writes `config.json`:
 | `merge` | `large`, `watch` | Merge all per-page markdowns into one file with a table of contents. |
 | `keep_pages` | `large`, `watch` | Keep the split page PDFs after conversion finishes. |
 | `overwrite` | `large`, `split` | Re-process pages/files that already have output. |
-| `extract_images` | `large`, `convert`, `watch` | Save images extracted from the PDF alongside the markdown. |
+| `extract_images` | `large`, `convert`, `watch` | Save images extracted from the PDF. |
+| `image_format` | `large`, `convert`, `watch` | Format for saved images: `png`, `jpeg`, or `webp`. Default: `png`. |
 | `retries` | `large`, `watch` | Max attempts per page before logging the failure and moving on. |
 | `cooldown` | `large`, `watch` | Seconds to pause between page conversions. Set `0` to disable. |
 | `log_file` | all | Write logs to this file in addition to the terminal. `null` = terminal only. |
@@ -207,14 +226,21 @@ Best for large PDFs that crash or run out of memory when converted all at once. 
 
 **Resume after crash:** re-run the exact same command. Already-converted pages are detected and skipped automatically.
 
-**Outputs written to `markdown_dir`:**
+**Output structure** (with `output_dir: "output"` and `pdf_path: "book.pdf"`):
 
-| File | Description |
-|---|---|
-| `<stem>_page_NNNN.md` | One markdown file per page |
-| `<stem>_metadata.json` | Full conversion metadata (written at start, updated at end) |
-| `<stem>_errors.log` | Details of every failed page (only created if there are failures) |
-| `<stem>.md` | Merged file with TOC (only when `merge: true`) |
+```
+output/
+└── book/
+    ├── pages/                  ← split page PDFs (deleted unless keep_pages: true)
+    ├── markdown/
+    │   ├── book_page_0001.md
+    │   ├── book_page_0002.md
+    │   ├── ...
+    │   ├── book_metadata.json  ← written at start, finalized at end
+    │   ├── book_errors.log     ← only created if pages fail
+    │   └── images/             ← extracted images (only when extract_images: true)
+    └── book.md                 ← merged file with TOC (only when merge: true)
+```
 
 ---
 
@@ -227,11 +253,13 @@ Reads all settings from `config.json`. No path arguments accepted.
 ```json
 {
   "pdf_path":   "/path/to/your.pdf",
-  "pages_dir":  "output/pages",
+  "output_dir": "output",
   "page_range": null,
   "overwrite":  false
 }
 ```
+
+Pages are written to `<output_dir>/<stem>/pages/`.
 
 ```bash
 ./scripts/run.sh split
@@ -255,15 +283,18 @@ Reads all settings from `config.json`. No path arguments accepted. Waits for eac
 
 ```json
 {
-  "watch_dir":    "/path/to/incoming/pdfs",
-  "markdown_dir": "output/markdown",
-  "large":        false,
-  "merge":        false,
+  "watch_dir":      "/path/to/incoming/pdfs",
+  "output_dir":     "output",
+  "large":          false,
+  "merge":          false,
   "extract_images": true,
-  "retries":      3,
-  "cooldown":     30
+  "image_format":   "png",
+  "retries":        3,
+  "cooldown":       30
 }
 ```
+
+Each detected PDF is converted into `<output_dir>/<stem>/markdown/`.
 
 ```bash
 ./scripts/run.sh watch

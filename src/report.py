@@ -11,6 +11,7 @@ class PageResult:
     output: Optional[Path] = None
     success: bool = False
     skipped: bool = False
+    blank: bool = False   # no extractable text (image-only / truly blank page)
     duration: float = 0.0
     output_size: int = 0
     error: Optional[str] = None
@@ -34,7 +35,11 @@ class RunReport:
 
     @property
     def succeeded(self) -> List[PageResult]:
-        return [r for r in self.results if r.success]
+        return [r for r in self.results if r.success and not r.blank]
+
+    @property
+    def blank(self) -> List[PageResult]:
+        return [r for r in self.results if r.blank]
 
     @property
     def failed(self) -> List[PageResult]:
@@ -63,6 +68,7 @@ class RunReport:
             "=" * 52,
             f"  Total pages  : {self.total_pages}",
             f"  Succeeded    : {len(self.succeeded)}",
+            f"  Blank pages  : {len(self.blank)}",
             f"  Skipped      : {len(self.skipped)}",
             f"  Failed       : {len(self.failed)}",
             f"  Total time   : {_fmt_duration(self.elapsed)}",

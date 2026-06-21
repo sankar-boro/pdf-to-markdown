@@ -45,6 +45,18 @@ Examples:
         action="store_true",
         help="Skip image extraction (images are extracted by default)",
     )
+    parser.add_argument(
+        "--images-dir",
+        default=None,
+        metavar="DIR",
+        help="Directory to save extracted images (default: <output>/<stem>_images/)",
+    )
+    parser.add_argument(
+        "--image-format",
+        choices=["png", "jpeg", "webp"],
+        default="png",
+        help="Format for extracted images (default: png)",
+    )
     add_logging_args(parser)
     args = parser.parse_args()
 
@@ -73,6 +85,8 @@ Examples:
                 page_range=args.page_range,
                 overwrite=not args.no_overwrite,
                 extract_images=not args.no_images,
+                images_dir=args.images_dir,
+                image_format=args.image_format,
             )
             logger.info(f"Converted: {result.output_file}  ({result.duration:.1f}s, {_fmt_size(result.output_size)})")
     except PDFError as e:
